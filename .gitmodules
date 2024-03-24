@@ -1,0 +1,3 @@
+[submodule "vendor/rp_extract"]
+	path = vendor/rp_extract
+	url = https://github.com/tuwien_musicir/rp_extract.git
