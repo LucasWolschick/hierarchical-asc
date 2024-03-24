@@ -1,0 +1,12 @@
+*.png
+datasets/
+material/
+vendor/zanoni/
+
+.venv
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+.vscode/
