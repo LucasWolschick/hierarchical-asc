@@ -44,11 +44,10 @@ class Experiment:
         models = [
             train_model(self.dataset, feature_data) for feature_data in feature_datas
         ]
+        late_fusion_estimator = LateFusionPredictor(models, fusion_rule=self.rule)
 
         print("[4/4] Avaliando modelo")
-        evaluate_model(
-            self.dataset, list(zip(models, feature_datas)), fusion_rule=self.rule
-        )
+        evaluate_model(self.dataset, late_fusion_estimator, feature_datas)
 
 
 def prepare_spectrograms(dataset: Dataset) -> dict[FileId, Path]:
@@ -144,41 +143,15 @@ def score_model(y, y_pred):
 
 def evaluate_model(
     dataset: Dataset,
-    features_models: list[tuple[BaseEstimator, dict[FileId, list[float]]]],
-    fusion_rule: Any,
+    model,
+    features: list[dict[FileId, list[float]]],
 ) -> Any:
-    # if len(features_models) == 1:
-    #     # no late fusion[
-    #     model, features = features_models[0]
-
-    #     eval_names = dataset.eval_names
-    #     labeled_eval_data = [(features[id], dataset.labels[id]) for id in eval_names]
-    #     feats = [x[0] for x in labeled_eval_data]
-    #     labels = [x[1] for x in labeled_eval_data]
-
-    #     print(
-    #         "Acurácia/Precisão/Recall/F1-Score no conjunto de avaliação:",
-    #         score_model(
-    #             labels,
-    #             model.predict(feats),
-    #         ),
-    #     )
-    # else:
-
-    # late fusion...
-    # rule: sum probabilities and take argmax
     eval_names = dataset.eval_names
     labels = [dataset.labels[id] for id in eval_names]
 
-    probas = []
-    for model, features in features_models:
-        feats = [features[id] for id in eval_names]
-        proba = model.predict_proba(feats)
-        probas.append(proba)
-
-    final_proba = fusion_rule(probas)
-    final_pred = np.argmax(final_proba, axis=1)
-    final_pred = [model.classes_[p] for p in final_pred]
+    final_pred = model.predict(
+        [[feature[name] for name in eval_names] for feature in features]
+    )
 
     print(
         "Acurácia/Precisão/Recall/F1-Score no conjunto de avaliação:",
@@ -187,3 +160,19 @@ def evaluate_model(
             final_pred,
         ),
     )
+
+
+class LateFusionPredictor:
+    def __init__(self, models, fusion_rule=lambda x: x[0]):
+        self.models = list(models)
+        self.classes = models[0].classes_
+        self.rule = fusion_rule
+
+    def predict(self, Xs):
+        final_proba = self.predict_proba(Xs)
+        final_pred = np.argmax(final_proba, axis=1)
+        return self.classes[final_pred]
+
+    def predict_proba(self, Xs):
+        probas = [model.predict_proba(X) for model, X in zip(self.models, Xs)]
+        return self.rule(probas)
