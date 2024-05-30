@@ -1,22 +1,30 @@
 import math
-from pathlib import Path
-import librosa
-import librosa.feature
-import librosa.feature.rhythm
-import numpy as np
-
-import skimage
-
-from . import lbp, lpq
-from . import lbp, lpq
-
-# rhythm patterns
-# add cwd to module path
 import os
+from pathlib import Path
+from typing import Callable
 import sys
 
 sys.path.append(os.getcwd())
+
+import librosa
+import numpy as np
+import skimage
+
 from vendor.rp_extract.rp_extract import rp_extract
+
+import features.lbp as lbp
+import features.lpq as lpq
+
+# add ../vendor to sys.path
+
+
+class FeatureSet:
+    id: str
+    extract: Callable[[Path, Path], list[float]]
+
+    def __init__(self, id: str, extract: Callable[[Path, Path], list[float]]):
+        self.id = id
+        self.extract = extract
 
 
 def fv_lbp_rp_ex(audio_path: Path, spectrogram_path: Path):
@@ -28,28 +36,28 @@ def fv_lbp_rp_ex(audio_path: Path, spectrogram_path: Path):
     x, fs = librosa.load(audio_path, sr=44100, mono=True)
     rp = rp_extract(x, fs, extract_rp=True)["rp"]
 
-    return np.hstack((lbp_hist, rp))
+    return np.hstack((lbp_hist, rp)).tolist()
 
 
 def fv_lbp_ex(audio_path: Path, spectrogram_path: Path):
     img = skimage.io.imread(spectrogram_path, as_gray=True)
 
     lbp_hist = lbp.get_lbp_histogram(img, p=8, r=2)
-    return np.hstack((lbp_hist,))
+    return np.hstack((lbp_hist,)).tolist()
 
 
 def fv_rp_ex(audio_path: Path, spectrogram_path: Path):
     # use rhythm pattern extraction from vendor/rp_extract
     x, fs = librosa.load(audio_path, sr=44100, mono=True)
     rp = rp_extract(x, fs, extract_rp=True)["rp"]
-    return np.hstack((rp,))
+    return np.hstack((rp,)).tolist()
 
 
 def fv_lpq_ex(audio_path: Path, spectrogram_path: Path):
     img = skimage.io.imread(spectrogram_path, as_gray=True)
 
     lpq_hist = lpq.get_lpq_histogram(img)
-    return np.hstack((lpq_hist,))
+    return np.hstack((lpq_hist,)).tolist()
 
 
 def fv_glcm_ex(audio_path: Path, spectrogram_path: Path):
@@ -62,7 +70,7 @@ def fv_glcm_ex(audio_path: Path, spectrogram_path: Path):
         (skimage.feature.graycoprops(mats, prop).flatten().tolist() for prop in props),
         [],
     )
-    return np.hstack((vals,))
+    return np.hstack((vals,)).tolist()
 
 
 def fv_mfcc_ex(audio_path: Path, spectrogram_path: Path):
@@ -79,7 +87,7 @@ def fv_mfcc_ex(audio_path: Path, spectrogram_path: Path):
         )
     )
 
-    return np.hstack((mfccs.flatten(),))
+    return np.hstack((mfccs.flatten(),)).tolist()
 
 
 def fv_glcm_mfcc_ex(audio_path: Path, spectrogram_path: Path):
@@ -91,7 +99,7 @@ def fv_glcm_mfcc_ex(audio_path: Path, spectrogram_path: Path):
             glcm,
             mfccs,
         )
-    )
+    ).tolist()
 
 
 def fv_lbp_mfcc_ex(audio_path: Path, spectrogram_path: Path):
@@ -103,7 +111,7 @@ def fv_lbp_mfcc_ex(audio_path: Path, spectrogram_path: Path):
             lbp,
             mfccs,
         )
-    )
+    ).tolist()
 
 
 def fv_lpq_mfcc_ex(audio_path: Path, spectrogram_path: Path):
@@ -115,7 +123,7 @@ def fv_lpq_mfcc_ex(audio_path: Path, spectrogram_path: Path):
             lpq,
             mfccs,
         )
-    )
+    ).tolist()
 
 
 def fv_lbp_mfcc_glcm_ex(audio_path: Path, spectrogram_path: Path):
@@ -123,16 +131,16 @@ def fv_lbp_mfcc_glcm_ex(audio_path: Path, spectrogram_path: Path):
     mfccs = fv_mfcc_ex(audio_path, spectrogram_path)
     glcm = fv_glcm_ex(audio_path, spectrogram_path)
 
-    return np.hstack((lbp, mfccs, glcm))
+    return np.hstack((lbp, mfccs, glcm)).tolist()
 
 
-fv_lbp_rp = ("lbp-rp", fv_lbp_rp_ex)
-fv_lbp = ("lbp", fv_lbp_ex)
-fv_rp = ("rp", fv_rp_ex)
-fv_lpq = ("lpq", fv_lpq_ex)
-fv_glcm = ("glcm", fv_glcm_ex)
-fv_mfcc = ("mfcc", fv_mfcc_ex)
-fv_glcm_mfcc = ("glcm-mfcc", fv_glcm_mfcc_ex)
-fv_lbp_mfcc = ("lbp-mfcc", fv_lbp_mfcc_ex)
-fv_lpq_mfcc = ("lpq-mfcc", fv_lpq_mfcc_ex)
-fv_lbp_mfcc_glcm = ("lbp-mfcc-glcm", fv_lbp_mfcc_glcm_ex)
+fv_lbp_rp = FeatureSet("lbp-rp", fv_lbp_rp_ex)
+fv_lbp = FeatureSet("lbp", fv_lbp_ex)
+fv_rp = FeatureSet("rp", fv_rp_ex)
+fv_lpq = FeatureSet("lpq", fv_lpq_ex)
+fv_glcm = FeatureSet("glcm", fv_glcm_ex)
+fv_mfcc = FeatureSet("mfcc", fv_mfcc_ex)
+fv_glcm_mfcc = FeatureSet("glcm-mfcc", fv_glcm_mfcc_ex)
+fv_lbp_mfcc = FeatureSet("lbp-mfcc", fv_lbp_mfcc_ex)
+fv_lpq_mfcc = FeatureSet("lpq-mfcc", fv_lpq_mfcc_ex)
+fv_lbp_mfcc_glcm = FeatureSet("lbp-mfcc-glcm", fv_lbp_mfcc_glcm_ex)
