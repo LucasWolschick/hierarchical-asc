@@ -3,7 +3,7 @@ from pathlib import Path
 import pickle
 from typing import Any
 import numpy as np
-from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.base import BaseEstimator, ClassifierMixin, clone
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
@@ -41,13 +41,20 @@ class Experiment:
         ]
 
         print("[3/4] Treinando modelo")
-        models = [
-            train_model(self.dataset, feature_data) for feature_data in feature_datas
+        train_names = self.dataset.train_names
+        train_labels = [self.dataset.labels[id] for id in train_names]
+        train_datas = [
+            select_features(train_names, feature_data) for feature_data in feature_datas
         ]
-        late_fusion_estimator = LateFusionPredictor(models, fusion_rule=self.rule)
+        model = train_model(train_datas, train_labels, self.rule)
 
         print("[4/4] Avaliando modelo")
-        evaluate_model(self.dataset, late_fusion_estimator, feature_datas)
+        eval_names = self.dataset.eval_names
+        eval_labels = [self.dataset.labels[id] for id in eval_names]
+        eval_datas = [
+            select_features(eval_names, feature_data) for feature_data in feature_datas
+        ]
+        evaluate_model(model, eval_datas, eval_labels)
 
 
 def prepare_spectrograms(dataset: Dataset) -> dict[FileId, Path]:
@@ -104,28 +111,26 @@ def extract_features(
     return data
 
 
-def train_model(
-    dataset: Dataset, feature_data: dict[FileId, list[float]]
-) -> BaseEstimator:
-    train_names = dataset.train_names
-    labeled_train_data = [(feature_data[id], dataset.labels[id]) for id in train_names]
-    features = [x[0] for x in labeled_train_data]
-    labels = [x[1] for x in labeled_train_data]
+def select_features(
+    keys: list[FileId], features: dict[FileId, list[float]]
+) -> list[list[float]]:
+    return [features[id] for id in keys]
 
-    # make template classifier
+
+def train_model(Xs: list[list[list[float]]], y: list[str], rule=lambda x: x[0]):
+    # template classifier
     scaler = StandardScaler()
-
-    svc = SVC(probability=True)
-    svc.set_params(kernel="rbf", class_weight="balanced")
-
+    svc = SVC(
+        probability=True, kernel="rbf", class_weight="balanced", C=10, gamma="auto"
+    )
     pipe = Pipeline(steps=[("scaler", scaler), ("svc", svc)])
 
-    best_params = {"svc__C": 10, "svc__gamma": "auto"}
-    pipe.set_params(**best_params)
+    # late fusion
+    lfe = LateFusionEstimator(base_estimator=pipe, fusion_rule=rule)
 
-    pipe.fit(features, labels)
+    lfe.fit(Xs, y)
 
-    return pipe
+    return lfe
 
 
 def score_model(y, y_pred):
@@ -142,37 +147,43 @@ def score_model(y, y_pred):
 
 
 def evaluate_model(
-    dataset: Dataset,
     model,
-    features: list[dict[FileId, list[float]]],
+    Xs: list[list[list[float]]],
+    y: list[str],
 ) -> Any:
-    eval_names = dataset.eval_names
-    labels = [dataset.labels[id] for id in eval_names]
-
-    final_pred = model.predict(
-        [[feature[name] for name in eval_names] for feature in features]
-    )
+    final_pred = model.predict(Xs)
 
     print(
         "Acurácia/Precisão/Recall/F1-Score no conjunto de avaliação:",
         score_model(
-            labels,
+            y,
             final_pred,
         ),
     )
 
 
-class LateFusionPredictor:
-    def __init__(self, models, fusion_rule=lambda x: x[0]):
-        self.models = list(models)
-        self.classes = models[0].classes_
+class LateFusionEstimator:
+    def __init__(self, base_estimator, fusion_rule=lambda x: x[0]):
+        self.base_estimator = base_estimator
         self.rule = fusion_rule
+        self.models_ = []
+
+    def fit(self, Xs: list[list[list[float]]], y: list[str]):
+        for X in Xs:
+            model = clone(self.base_estimator)
+            model.fit(X, y)
+            self.models_.append(model)
+        return self
 
     def predict(self, Xs):
+        assert len(Xs) == len(
+            self.models_
+        ), "Este modelo não foi treinado para esse dataset."
+
         final_proba = self.predict_proba(Xs)
         final_pred = np.argmax(final_proba, axis=1)
-        return self.classes[final_pred]
+        return self.models_[0].classes_[final_pred]
 
     def predict_proba(self, Xs):
-        probas = [model.predict_proba(X) for model, X in zip(self.models, Xs)]
+        probas = [model.predict_proba(X) for model, X in zip(self.models_, Xs)]
         return self.rule(probas)
