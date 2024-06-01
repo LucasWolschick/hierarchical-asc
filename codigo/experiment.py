@@ -59,7 +59,7 @@ class Experiment:
         ]
         evaluate_model(model, eval_datas, eval_labels)
 
-    def run_hier_inner(self):
+    def run_hier_inner(self, classifier: Any = hiclass.LocalClassifierPerNode):
         print("[1/4] Gerando espectrogramas")
         spectrograms = prepare_spectrograms(self.dataset)
 
@@ -75,7 +75,9 @@ class Experiment:
         train_datas = [
             select_features(train_names, feature_data) for feature_data in feature_datas
         ]
-        model = train_hierarchical_model_inner(train_datas, train_labels, self.rule)
+        model = train_hierarchical_model_inner(
+            train_datas, train_labels, self.rule, classifier
+        )
 
         print("[4/4] Avaliando modelo")
         eval_names = self.dataset.eval_names
@@ -85,7 +87,7 @@ class Experiment:
         ]
         evaluate_model(model, eval_datas, eval_labels)
 
-    def run_hier_outer(self):
+    def run_hier_outer(self, classifier: Any = hiclass.LocalClassifierPerNode):
         print("[1/4] Gerando espectrogramas")
         spectrograms = prepare_spectrograms(self.dataset)
 
@@ -101,7 +103,9 @@ class Experiment:
         train_datas = [
             select_features(train_names, feature_data) for feature_data in feature_datas
         ]
-        model = train_hierarchical_model_outer(train_datas, train_labels, self.rule)
+        model = train_hierarchical_model_outer(
+            train_datas, train_labels, self.rule, classifier
+        )
 
         print("[4/4] Avaliando modelo")
         eval_names = self.dataset.eval_names
@@ -298,11 +302,17 @@ def evaluate_model(
 
     final_pred = model.predict(merged)
 
+    if isinstance(final_pred[0], list) or isinstance(final_pred[0], np.ndarray):
+        elems = [elem[-1] for elem in y]
+        final_pred = [elem[-1] for elem in final_pred]
+    else:
+        elems = y
+
     print(
         "Acurácia/Precisão/Recall/F1-Score no conjunto de avaliação:",
         score_model(
-            [elem[-1] for elem in y],
-            [pred[-1] for pred in final_pred],
+            elems,
+            final_pred,
         ),
     )
 
