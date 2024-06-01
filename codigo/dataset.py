@@ -68,7 +68,6 @@ def tau2019dev():
     test_fold = pd.read_csv(root / "evaluation_setup/fold1_test.csv", sep="\t")
     eval_fold = pd.read_csv(root / "evaluation_setup/fold1_evaluate.csv", sep="\t")
 
-    print(train_fold.columns)
     train_names = train_fold["filename"].tolist()
     test_names = test_fold["filename"].tolist()
     eval_names = eval_fold["filename"].tolist()

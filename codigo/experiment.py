@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import pickle
 from typing import Any
@@ -18,7 +19,9 @@ from sklearn.metrics import (
 import concurrent.futures
 import tqdm
 import matplotlib.pyplot as plt
+import hiclass
 
+import hierarchy as hier
 from dataset import Dataset, FileId
 from features.feature_vector import FeatureSet
 import spectrogram as spectrogram
@@ -51,6 +54,58 @@ class Experiment:
         print("[4/4] Avaliando modelo")
         eval_names = self.dataset.eval_names
         eval_labels = [self.dataset.labels[id] for id in eval_names]
+        eval_datas = [
+            select_features(eval_names, feature_data) for feature_data in feature_datas
+        ]
+        evaluate_model(model, eval_datas, eval_labels)
+
+    def run_hier_inner(self):
+        print("[1/4] Gerando espectrogramas")
+        spectrograms = prepare_spectrograms(self.dataset)
+
+        print("[2/4] Extraindo características")
+        feature_datas = [
+            extract_features(self.dataset, set, spectrograms)
+            for set in self.feature_sets
+        ]
+
+        print("[3/4] Treinando modelo")
+        train_names = self.dataset.train_names
+        train_labels = [hier.paths[self.dataset.labels[id]] for id in train_names]
+        train_datas = [
+            select_features(train_names, feature_data) for feature_data in feature_datas
+        ]
+        model = train_hierarchical_model_inner(train_datas, train_labels, self.rule)
+
+        print("[4/4] Avaliando modelo")
+        eval_names = self.dataset.eval_names
+        eval_labels = [hier.paths[self.dataset.labels[id]] for id in eval_names]
+        eval_datas = [
+            select_features(eval_names, feature_data) for feature_data in feature_datas
+        ]
+        evaluate_model(model, eval_datas, eval_labels)
+
+    def run_hier_outer(self):
+        print("[1/4] Gerando espectrogramas")
+        spectrograms = prepare_spectrograms(self.dataset)
+
+        print("[2/4] Extraindo características")
+        feature_datas = [
+            extract_features(self.dataset, set, spectrograms)
+            for set in self.feature_sets
+        ]
+
+        print("[3/4] Treinando modelo")
+        train_names = self.dataset.train_names
+        train_labels = [hier.paths[self.dataset.labels[id]] for id in train_names]
+        train_datas = [
+            select_features(train_names, feature_data) for feature_data in feature_datas
+        ]
+        model = train_hierarchical_model_outer(train_datas, train_labels, self.rule)
+
+        print("[4/4] Avaliando modelo")
+        eval_names = self.dataset.eval_names
+        eval_labels = [hier.paths[self.dataset.labels[id]] for id in eval_names]
         eval_datas = [
             select_features(eval_names, feature_data) for feature_data in feature_datas
         ]
@@ -125,12 +180,100 @@ def train_model(Xs: list[list[list[float]]], y: list[str], rule=lambda x: x[0]):
     )
     pipe = Pipeline(steps=[("scaler", scaler), ("svc", svc)])
 
-    # late fusion
-    lfe = LateFusionEstimator(base_estimator=pipe, fusion_rule=rule)
+    # split
+    X, ends = merge_features(Xs)
 
-    lfe.fit(Xs, y)
+    # late fusion
+    lfe = LateFusionEstimator(base_estimator=pipe, fusion_rule=rule, ends=ends)
+
+    lfe.fit(X, y)
 
     return lfe
+
+
+def merge_features(Xs: list[list[list[float]]]) -> tuple[list[list[float]], list[int]]:
+    acc = 0
+    ends = []
+    all = []
+
+    # join feature vectors
+    for i in range(len(Xs[0])):
+        lst = []
+        for feat_list in Xs:
+            lst += feat_list[i]
+        all.append(lst)
+
+    # calculate ends
+    for x in Xs:
+        acc += len(x[0])
+        ends.append(acc)
+
+    return all, ends
+
+
+def unmerge_features(X: list[list[float]], ends: list[int]) -> list[list[list[float]]]:
+    last = 0
+
+    ranges = []
+    for end in ends:
+        ranges.append((last, end))
+        last = end
+
+    lsts = [[feat_vec[range[0] : range[1]] for feat_vec in X] for range in ranges]
+    return lsts
+
+
+def train_hierarchical_model_inner(
+    Xs: list[list[list[float]]],
+    y: list[str],
+    rule=lambda x: x[0],
+    classifier=hiclass.LocalClassifierPerNode,
+):
+    # MERGE
+    merged, ends = merge_features(Xs)
+
+    # template classifier
+    scaler = StandardScaler()
+    svc = SVC(
+        probability=True, kernel="rbf", class_weight="balanced", C=10, gamma="auto"
+    )
+    pipe = Pipeline(steps=[("scaler", scaler), ("svc", svc)])
+
+    # late fusion
+    lfe = LateFusionEstimator(base_estimator=pipe, fusion_rule=rule, ends=ends)
+
+    # hier
+    return classifier(
+        local_classifier=lfe,
+        n_jobs=os.cpu_count() or 1,
+    ).fit(merged, y)
+
+
+def train_hierarchical_model_outer(
+    Xs: list[list[list[float]]],
+    y: list[str],
+    rule=lambda x: x[0],
+    classifier=hiclass.LocalClassifierPerNode,
+):
+    # template classifier
+    scaler = StandardScaler()
+    svc = SVC(
+        probability=True, kernel="rbf", class_weight="balanced", C=10, gamma="auto"
+    )
+    pipe = Pipeline(steps=[("scaler", scaler), ("svc", svc)])
+
+    LCPN = classifier(
+        local_classifier=pipe,
+        n_jobs=os.cpu_count() or 1,
+    )
+
+    # merge
+    X, ends = merge_features(Xs)
+
+    # late fusion
+    return LateFusionEstimator(base_estimator=LCPN, fusion_rule=rule, ends=ends).fit(
+        X, y
+    )
 
 
 def score_model(y, y_pred):
@@ -151,39 +294,53 @@ def evaluate_model(
     Xs: list[list[list[float]]],
     y: list[str],
 ) -> Any:
-    final_pred = model.predict(Xs)
+    merged, _ = merge_features(Xs)
+
+    final_pred = model.predict(merged)
 
     print(
         "Acurácia/Precisão/Recall/F1-Score no conjunto de avaliação:",
         score_model(
-            y,
-            final_pred,
+            [elem[-1] for elem in y],
+            [pred[-1] for pred in final_pred],
         ),
     )
 
 
-class LateFusionEstimator:
-    def __init__(self, base_estimator, fusion_rule=lambda x: x[0]):
+class LateFusionEstimator(BaseEstimator):
+    def __init__(self, base_estimator, fusion_rule=lambda x: x[0], ends=None):
         self.base_estimator = base_estimator
         self.rule = fusion_rule
+        self.ends = ends
         self.models_ = []
 
-    def fit(self, Xs: list[list[list[float]]], y: list[str]):
-        for X in Xs:
+    def fit(self, X: list[list[float]], y: list[str], class_weight=None):
+        if self.ends:
+            split = unmerge_features(X, self.ends)
+            for X in split:
+                model = clone(self.base_estimator)
+                model.fit(X, y)
+                self.models_.append(model)
+            self.classes_ = self.models_[0].classes_
+        else:
             model = clone(self.base_estimator)
             model.fit(X, y)
             self.models_.append(model)
+            self.classes_ = model.classes_
         return self
 
-    def predict(self, Xs):
-        assert len(Xs) == len(
-            self.models_
-        ), "Este modelo não foi treinado para esse dataset."
-
-        final_proba = self.predict_proba(Xs)
+    def predict(self, X):
+        final_proba = self.predict_proba(X)
         final_pred = np.argmax(final_proba, axis=1)
         return self.models_[0].classes_[final_pred]
 
-    def predict_proba(self, Xs):
-        probas = [model.predict_proba(X) for model, X in zip(self.models_, Xs)]
-        return self.rule(probas)
+    def predict_proba(self, X):
+        if self.ends:
+            Xs = unmerge_features(X, self.ends)
+            probas = [model.predict_proba(X) for model, X in zip(self.models_, Xs)]
+            return self.rule(probas)
+        else:
+            return self.models_[0].predict_proba(X)
+
+    def clone(self):
+        return LateFusionEstimator(self.base_estimator, self.rule, self.ends)
