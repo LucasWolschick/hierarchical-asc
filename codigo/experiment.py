@@ -4,7 +4,7 @@ from pathlib import Path
 import pickle
 from typing import Any
 import numpy as np
-from sklearn.base import BaseEstimator, ClassifierMixin, clone
+from sklearn.base import BaseEstimator
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
@@ -178,17 +178,21 @@ def select_features(
 
 def train_model(Xs: list[list[list[float]]], y: list[str], rule=lambda x: x[0]):
     # template classifier
-    scaler = StandardScaler()
-    svc = SVC(
-        probability=True, kernel="rbf", class_weight="balanced", C=10, gamma="auto"
-    )
-    pipe = Pipeline(steps=[("scaler", scaler), ("svc", svc)])
+    def factory():
+        scaler = StandardScaler()
+        svc = SVC(
+            probability=True, kernel="rbf", class_weight="balanced", C=10, gamma="auto"
+        )
+        pipe = Pipeline(steps=[("scaler", scaler), ("svc", svc)])
+        return pipe
 
     # split
     X, ends = merge_features(Xs)
 
     # late fusion
-    lfe = LateFusionEstimator(base_estimator=pipe, fusion_rule=rule, ends=ends)
+    lfe = LateFusionEstimator(
+        base_estimator_factory=factory, fusion_rule=rule, ends=ends
+    )
 
     lfe.fit(X, y)
 
@@ -237,14 +241,18 @@ def train_hierarchical_model_inner(
     merged, ends = merge_features(Xs)
 
     # template classifier
-    scaler = StandardScaler()
-    svc = SVC(
-        probability=True, kernel="rbf", class_weight="balanced", C=10, gamma="auto"
-    )
-    pipe = Pipeline(steps=[("scaler", scaler), ("svc", svc)])
+    def factory():
+        scaler = StandardScaler()
+        svc = SVC(
+            probability=True, kernel="rbf", class_weight="balanced", C=10, gamma="auto"
+        )
+        pipe = Pipeline(steps=[("scaler", scaler), ("svc", svc)])
+        return pipe
 
     # late fusion
-    lfe = LateFusionEstimator(base_estimator=pipe, fusion_rule=rule, ends=ends)
+    lfe = LateFusionEstimator(
+        base_estimator_factory=factory, fusion_rule=rule, ends=ends
+    )
 
     # hier
     return classifier(
@@ -260,24 +268,26 @@ def train_hierarchical_model_outer(
     classifier=hiclass.LocalClassifierPerNode,
 ):
     # template classifier
-    scaler = StandardScaler()
-    svc = SVC(
-        probability=True, kernel="rbf", class_weight="balanced", C=10, gamma="auto"
-    )
-    pipe = Pipeline(steps=[("scaler", scaler), ("svc", svc)])
+    def factory():
+        scaler = StandardScaler()
+        svc = SVC(
+            probability=True, kernel="rbf", class_weight="balanced", C=10, gamma="auto"
+        )
+        pipe = Pipeline(steps=[("scaler", scaler), ("svc", svc)])
 
-    LCPN = classifier(
-        local_classifier=pipe,
-        n_jobs=os.cpu_count() or 1,
-    )
+        LCPN = classifier(
+            local_classifier=pipe,
+            n_jobs=os.cpu_count() or 1,
+        )
+        return LCPN
 
     # merge
     X, ends = merge_features(Xs)
 
     # late fusion
-    return LateFusionEstimator(base_estimator=LCPN, fusion_rule=rule, ends=ends).fit(
-        X, y
-    )
+    return LateFusionEstimator(
+        base_estimator_factory=factory, fusion_rule=rule, ends=ends
+    ).fit(X, y)
 
 
 def score_model(y, y_pred):
@@ -301,12 +311,13 @@ def evaluate_model(
     merged, _ = merge_features(Xs)
 
     final_pred = model.predict(merged)
+    elems = y
+
+    if isinstance(y[0], list) or isinstance(y[0], np.ndarray):
+        elems = [elem[-1] for elem in y]
 
     if isinstance(final_pred[0], list) or isinstance(final_pred[0], np.ndarray):
-        elems = [elem[-1] for elem in y]
         final_pred = [elem[-1] for elem in final_pred]
-    else:
-        elems = y
 
     print(
         "Acurácia/Precisão/Recall/F1-Score no conjunto de avaliação:",
@@ -318,8 +329,8 @@ def evaluate_model(
 
 
 class LateFusionEstimator(BaseEstimator):
-    def __init__(self, base_estimator, fusion_rule=lambda x: x[0], ends=None):
-        self.base_estimator = base_estimator
+    def __init__(self, base_estimator_factory, fusion_rule=lambda x: x[0], ends=None):
+        self.base_estimator_factory = base_estimator_factory
         self.rule = fusion_rule
         self.ends = ends
         self.models_ = []
@@ -328,12 +339,12 @@ class LateFusionEstimator(BaseEstimator):
         if self.ends:
             split = unmerge_features(X, self.ends)
             for X in split:
-                model = clone(self.base_estimator)
+                model = self.base_estimator_factory()
                 model.fit(X, y)
                 self.models_.append(model)
             self.classes_ = self.models_[0].classes_
         else:
-            model = clone(self.base_estimator)
+            model = self.base_estimator_factory()
             model.fit(X, y)
             self.models_.append(model)
             self.classes_ = model.classes_
@@ -342,7 +353,13 @@ class LateFusionEstimator(BaseEstimator):
     def predict(self, X):
         final_proba = self.predict_proba(X)
         final_pred = np.argmax(final_proba, axis=1)
-        return self.models_[0].classes_[final_pred]
+        clist = self.models_[0].classes_
+
+        if not isinstance(clist[0], str):
+            pred = np.array(clist[-1])[final_pred]
+        else:
+            pred = np.array(clist)[final_pred]
+        return pred
 
     def predict_proba(self, X):
         if self.ends:
@@ -351,6 +368,3 @@ class LateFusionEstimator(BaseEstimator):
             return self.rule(probas)
         else:
             return self.models_[0].predict_proba(X)
-
-    def clone(self):
-        return LateFusionEstimator(self.base_estimator, self.rule, self.ends)
