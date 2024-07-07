@@ -1,3 +1,6 @@
 [submodule "vendor/rp_extract"]
 	path = vendor/rp_extract
 	url = https://github.com/tuwien-musicir/rp_extract.git
+[submodule "vendor/hiclass"]
+	path = vendor/hiclass
+	url = https://github.com/LukasDrews97/hiclass
