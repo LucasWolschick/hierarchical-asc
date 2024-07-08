@@ -62,11 +62,6 @@ class Individual:
     fitness: int
 
 
-def score(val):
-    # simple hash: make string and hash
-    return hash(str(val)) & 0x7FFF_FFFF
-
-
 all_partitions = partitions(lst)
 
 
@@ -85,35 +80,49 @@ def label_to_partition(label):
     return sets
 
 
-all_partitions = [
-    Individual(l := partition_to_label(p), score(l)) for p in all_partitions
-]
+individual_cache = {}
+
+
+def get_individual(partition):
+    k = str(partition)
+    if k not in individual_cache:
+        i = Individual(partition, -1)
+        individual_cache[k] = i
+    return individual_cache[k]
+
+
+all_partitions = [get_individual(partition_to_label(p)) for p in all_partitions]
 
 
 POP_SIZE = 100
 GENERATIONS = 100
 
+dataset = tau2019dev().frac(k=0.15)
+feats = [fv_lbp]  # [fv_lbp, fv_lpq, fv_glcm, fv_mfcc]
+rule = lambda r: np.prod(r, axis=0)
+
 
 def fitness(partition):
-    # run a whole experiment...
-    splitted = label_to_partition(partition.partition)
-    hier = {}
-    hier["_root"] = ["_" + str(s) for s in range(len(splitted))]
-    for i, s in enumerate(splitted):
-        hier["_" + str(i)] = s
-    paths = {}
-    add_path(paths, hier, "_root", [])
+    if partition.fitness == -1:
+        # run a whole experiment...
+        splitted = label_to_partition(partition.partition)
+        hier = {}
+        hier["_root"] = ["_" + str(s) for s in range(len(splitted))]
+        for i, s in enumerate(splitted):
+            hier["_" + str(i)] = s
+        paths = {}
+        add_path(paths, hier, "_root", [])
 
-    dataset = tau2019dev().frac(k=0.15)
-    feats = [fv_lbp]  # [fv_lbp, fv_lpq, fv_glcm, fv_mfcc]
-    rule = lambda r: np.prod(r, axis=0)
+        experiment = Experiment(
+            dataset=dataset, feature_sets=feats, rule=rule, log=False
+        )
+        res = experiment.run_hier_inner(
+            paths=paths, classifier=hiclass.LocalClassifierPerNode
+        )
+        # jesus
+        partition.fitness = res[0]
 
-    experiment = Experiment(dataset=dataset, feature_sets=feats, rule=rule, log=False)
-    res = experiment.run_hier_inner(
-        paths=paths, classifier=hiclass.LocalClassifierPerNode
-    )
-    # jesus
-    return res[0]
+    return partition.fitness
 
 
 def selection(population):
@@ -122,6 +131,8 @@ def selection(population):
     # accumulate fitness
     pool = multiprocessing.Pool()
     scores = pool.map(fitness, population)
+    # update caches
+
     # scores = [fitness(individual) for individual in population]
     accum_scores = [scores[0]]
     for i in range(1, len(scores)):
@@ -159,9 +170,8 @@ def crossover(parent1, parent2):
     mapping = {subset: i for i, subset in enumerate(subsets)}
     labels = [mapping[label] for label in labels]
 
-    return Individual(
+    return get_individual(
         labels,
-        score(labels),
     )
 
 
@@ -181,7 +191,7 @@ def mutation(individual):
             mapping = {subset: i for i, subset in enumerate(subsets)}
             new_labels = [mapping[label] for label in new_labels]
 
-    return Individual(new_labels, score(new_labels))
+    return get_individual(new_labels)
 
 
 def update(population, new_population):
@@ -196,7 +206,7 @@ def genetic(initial_population):
         print(f"Generation {gen+1}...")
         # selection + crossover + mutation
         new_population = []
-        for _ in range(POP_SIZE):
+        for i in range(POP_SIZE):
             p1, p2 = selection(population)
             i = crossover(p1, p2)
             i = mutation(i)
@@ -212,7 +222,7 @@ def genetic(initial_population):
         worst_partition = min(population, key=lambda x: fitness(x))
         worst_score = fitness(worst_partition)
         print(
-            f"Generation {gen+1}: {best_score} ({label_to_partition(best_partition)}), worst: {worst_score}"
+            f"Generation {gen+1}: {best_score} ({label_to_partition(best_partition.partition)}), worst: {worst_score}"
         )
 
     return population
