@@ -32,18 +32,23 @@ class Experiment:
     dataset: Dataset
     feature_sets: list[FeatureSet]
     rule: Any
+    log: bool = True
+
+    def print(self, *args, **kwargs):
+        if self.log:
+            print(*args, **kwargs)
 
     def run(self):
-        print("[1/4] Gerando espectrogramas")
-        spectrograms = prepare_spectrograms(self.dataset)
+        self.print("[1/4] Gerando espectrogramas")
+        spectrograms = prepare_spectrograms(self.dataset, self.log)
 
-        print("[2/4] Extraindo características")
+        self.print("[2/4] Extraindo características")
         feature_datas = [
-            extract_features(self.dataset, set, spectrograms)
+            extract_features(self.dataset, set, spectrograms, self.log)
             for set in self.feature_sets
         ]
 
-        print("[3/4] Treinando modelo")
+        self.print("[3/4] Treinando modelo")
         train_names = self.dataset.train_names
         train_labels = [self.dataset.labels[id] for id in train_names]
         train_datas = [
@@ -51,27 +56,27 @@ class Experiment:
         ]
         model = train_model(train_datas, train_labels, self.rule)
 
-        print("[4/4] Avaliando modelo")
+        self.print("[4/4] Avaliando modelo")
         eval_names = self.dataset.eval_names
         eval_labels = [self.dataset.labels[id] for id in eval_names]
         eval_datas = [
             select_features(eval_names, feature_data) for feature_data in feature_datas
         ]
-        evaluate_model(model, eval_datas, eval_labels)
+        return evaluate_model(model, eval_datas, eval_labels)
 
-    def run_hier_inner(self, classifier: Any = hiclass.LocalClassifierPerNode):
-        print("[1/4] Gerando espectrogramas")
-        spectrograms = prepare_spectrograms(self.dataset)
+    def run_hier_inner(self, paths, classifier: Any = hiclass.LocalClassifierPerNode):
+        self.print("[1/4] Gerando espectrogramas")
+        spectrograms = prepare_spectrograms(self.dataset, self.log)
 
-        print("[2/4] Extraindo características")
+        self.print("[2/4] Extraindo características")
         feature_datas = [
-            extract_features(self.dataset, set, spectrograms)
+            extract_features(self.dataset, set, spectrograms, self.log)
             for set in self.feature_sets
         ]
 
-        print("[3/4] Treinando modelo")
+        self.print("[3/4] Treinando modelo")
         train_names = self.dataset.train_names
-        train_labels = [hier.paths[self.dataset.labels[id]] for id in train_names]
+        train_labels = [paths[self.dataset.labels[id]] for id in train_names]
         train_datas = [
             select_features(train_names, feature_data) for feature_data in feature_datas
         ]
@@ -79,27 +84,27 @@ class Experiment:
             train_datas, train_labels, self.rule, classifier
         )
 
-        print("[4/4] Avaliando modelo")
+        self.print("[4/4] Avaliando modelo")
         eval_names = self.dataset.eval_names
-        eval_labels = [hier.paths[self.dataset.labels[id]] for id in eval_names]
+        eval_labels = [paths[self.dataset.labels[id]] for id in eval_names]
         eval_datas = [
             select_features(eval_names, feature_data) for feature_data in feature_datas
         ]
-        evaluate_model(model, eval_datas, eval_labels)
+        return evaluate_model(model, eval_datas, eval_labels)
 
-    def run_hier_outer(self, classifier: Any = hiclass.LocalClassifierPerNode):
-        print("[1/4] Gerando espectrogramas")
-        spectrograms = prepare_spectrograms(self.dataset)
+    def run_hier_outer(self, paths, classifier: Any = hiclass.LocalClassifierPerNode):
+        self.print("[1/4] Gerando espectrogramas")
+        spectrograms = prepare_spectrograms(self.dataset, self.log)
 
-        print("[2/4] Extraindo características")
+        self.print("[2/4] Extraindo características")
         feature_datas = [
             extract_features(self.dataset, set, spectrograms)
             for set in self.feature_sets
         ]
 
-        print("[3/4] Treinando modelo")
+        self.print("[3/4] Treinando modelo")
         train_names = self.dataset.train_names
-        train_labels = [hier.paths[self.dataset.labels[id]] for id in train_names]
+        train_labels = [paths[self.dataset.labels[id]] for id in train_names]
         train_datas = [
             select_features(train_names, feature_data) for feature_data in feature_datas
         ]
@@ -107,16 +112,16 @@ class Experiment:
             train_datas, train_labels, self.rule, classifier
         )
 
-        print("[4/4] Avaliando modelo")
+        self.print("[4/4] Avaliando modelo")
         eval_names = self.dataset.eval_names
-        eval_labels = [hier.paths[self.dataset.labels[id]] for id in eval_names]
+        eval_labels = [paths[self.dataset.labels[id]] for id in eval_names]
         eval_datas = [
             select_features(eval_names, feature_data) for feature_data in feature_datas
         ]
-        evaluate_model(model, eval_datas, eval_labels)
+        return evaluate_model(model, eval_datas, eval_labels)
 
 
-def prepare_spectrograms(dataset: Dataset) -> dict[FileId, Path]:
+def prepare_spectrograms(dataset: Dataset, log: bool = True) -> dict[FileId, Path]:
     spectrogram_base = Path(dataset.root_path) / "spectrograms"
     spectrogram_base.mkdir(parents=True, exist_ok=True)
 
@@ -128,19 +133,28 @@ def prepare_spectrograms(dataset: Dataset) -> dict[FileId, Path]:
             spectrogram.save_spectrogram_image_to_path(s, img_path)
         return (id, img_path)
 
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        return dict(
-            tqdm.tqdm(
-                executor.map(process_file, dataset.all_names),
-                total=len(dataset.all_names),
+    if log:
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            return dict(
+                tqdm.tqdm(
+                    executor.map(process_file, dataset.all_names),
+                    total=len(dataset.all_names),
+                )
             )
-        )
+    else:
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            return dict(
+                executor.map(process_file, dataset.all_names),
+            )
 
 
 def extract_features(
-    dataset: Dataset, feature_set: FeatureSet, spectrograms: dict[FileId, Path]
+    dataset: Dataset,
+    feature_set: FeatureSet,
+    spectrograms: dict[FileId, Path],
+    log: bool = True,
 ) -> dict[FileId, list[float]]:
-    print(f"Extraindo features ({id})")
+    # print(f"Extraindo features ({id})")
 
     # extrai feature
     features = dataset.root_path / f"feature_data_{dataset.id}_{feature_set.id}.pkl"
@@ -155,13 +169,19 @@ def extract_features(
         feature_vector = feature_set.extract(dataset.path_from_id[id], spectrogram_path)
         return (id, feature_vector)
 
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        feature_data: list[tuple[FileId, list[float]]] = list(
-            tqdm.tqdm(
+    if log:
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            feature_data: list[tuple[FileId, list[float]]] = list(
+                tqdm.tqdm(
+                    executor.map(process_file, spectrograms.items()),
+                    total=len(spectrograms),
+                )
+            )  # type: ignore
+    else:
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            feature_data: list[tuple[FileId, list[float]]] = list(
                 executor.map(process_file, spectrograms.items()),
-                total=len(spectrograms),
-            )
-        )  # type: ignore
+            )  # type: ignore
 
     data = dict(feature_data)
     with open(features, "wb") as f:
@@ -257,7 +277,7 @@ def train_hierarchical_model_inner(
     # hier
     return classifier(
         local_classifier=lfe,
-        n_jobs=os.cpu_count() or 1,
+        # n_jobs=os.cpu_count() or 1,
     ).fit(merged, y)
 
 
@@ -277,7 +297,7 @@ def train_hierarchical_model_outer(
 
         LCPN = classifier(
             local_classifier=pipe,
-            n_jobs=os.cpu_count() or 1,
+            # n_jobs=os.cpu_count() or 1,
         )
         return LCPN
 
@@ -292,8 +312,8 @@ def train_hierarchical_model_outer(
 
 def score_model(y, y_pred):
     # confusion matrix
-    cm = ConfusionMatrixDisplay.from_predictions(y, y_pred, xticks_rotation=45)
-    plt.show()
+    # cm = ConfusionMatrixDisplay.from_predictions(y, y_pred, xticks_rotation=45)
+    # plt.show()
 
     return (
         accuracy_score(y, y_pred),
@@ -319,13 +339,12 @@ def evaluate_model(
     if isinstance(final_pred[0], list) or isinstance(final_pred[0], np.ndarray):
         final_pred = [elem[-1] for elem in final_pred]
 
-    print(
-        "Acurácia/Precisão/Recall/F1-Score no conjunto de avaliação:",
-        score_model(
-            elems,
-            final_pred,
-        ),
+    s = score_model(
+        elems,
+        final_pred,
     )
+    # print("Acurácia/Precisão/Recall/F1-Score no conjunto de avaliação:", s)
+    return s
 
 
 class LateFusionEstimator(BaseEstimator):

@@ -13,11 +13,11 @@ hier = {
 paths = {}
 
 
-def add_path(node, parents):
+def add_path(paths, hier, node, parents):
     paths[node] = parents + [node]
     if node in hier:
         for child in hier[node]:
-            add_path(child, parents + [node])
+            add_path(paths, hier, child, parents + [node])
 
 
-add_path("_root", [])
+add_path(paths, hier, "_root", [])
