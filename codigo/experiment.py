@@ -343,7 +343,7 @@ def evaluate_model(
         elems,
         final_pred,
     )
-    # print("Acurácia/Precisão/Recall/F1-Score no conjunto de avaliação:", s)
+    print("Acurácia/Precisão/Recall/F1-Score no conjunto de avaliação:", s)
     return s
 
 
