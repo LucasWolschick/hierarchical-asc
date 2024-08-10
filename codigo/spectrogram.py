@@ -14,6 +14,8 @@ def scale_to_range(x, min, max):
 def generate_spectrogram(audio_path):
     y, sr = librosa.load(audio_path, sr=48000, mono=True)  # dataset está em 48kHz mono
 
+    # n_fft altera a altura do espectrograma (deve ser uma potência de 2)
+    # hop_length altera a largura do espectrograma
     S = librosa.stft(y, n_fft=1024, hop_length=552, center=True)
     S = librosa.power_to_db(np.abs(S) ** 2, ref=np.max)
 
@@ -27,9 +29,9 @@ def save_spectrogram_image_to_path(spectrogram, path):
     im = Image.fromarray(img)
 
     # map using plt colormap
-    im.putpalette(
-        (plt.get_cmap("viridis")(np.arange(256)) * 256).astype(np.uint8), rawmode="RGBA"
-    )
+    # im.putpalette(
+    #     (plt.get_cmap("viridis")(np.arange(256)) * 256).astype(np.uint8), rawmode="RGBA"
+    # )
 
     # convert im to BGR2GRAY
     im = im.convert("L")
