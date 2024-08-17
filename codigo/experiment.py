@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-import os
+from datetime import datetime
 from pathlib import Path
 import pickle
 from typing import Any
@@ -312,8 +312,8 @@ def train_hierarchical_model_outer(
 
 def score_model(y, y_pred):
     # confusion matrix
-    # cm = ConfusionMatrixDisplay.from_predictions(y, y_pred, xticks_rotation=45)
-    # plt.show()
+    cm = ConfusionMatrixDisplay.from_predictions(y, y_pred, xticks_rotation=45)
+    plt.savefig(fname=str(datetime.now()) + ".png", bbox_inches="tight", pad_inches=1)
 
     return (
         accuracy_score(y, y_pred),

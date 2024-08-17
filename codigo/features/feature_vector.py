@@ -134,6 +134,31 @@ def fv_lbp_mfcc_glcm_ex(audio_path: Path, spectrogram_path: Path):
     return np.hstack((lbp, mfccs, glcm)).tolist()
 
 
+def fv_lbp_mfcc_rp_ex(audio_path: Path, spectrogram_path: Path):
+    lbp = fv_lbp_ex(audio_path, spectrogram_path)
+    mfccs = fv_mfcc_ex(audio_path, spectrogram_path)
+    rp = fv_rp_ex(audio_path, spectrogram_path)
+
+    return np.hstack((lbp, mfccs, rp)).tolist()
+
+
+def fv_lpq_mfcc_rp_ex(audio_path: Path, spectrogram_path: Path):
+    lpq = fv_lpq_ex(audio_path, spectrogram_path)
+    mfccs = fv_mfcc_ex(audio_path, spectrogram_path)
+    rp = fv_rp_ex(audio_path, spectrogram_path)
+
+    return np.hstack((lpq, mfccs, rp)).tolist()
+
+
+def fv_lbp_mfcc_glcm_rp_ex(audio_path: Path, spectrogram_path: Path):
+    lbp = fv_lbp_ex(audio_path, spectrogram_path)
+    mfccs = fv_mfcc_ex(audio_path, spectrogram_path)
+    glcm = fv_glcm_ex(audio_path, spectrogram_path)
+    rp = fv_rp_ex(audio_path, spectrogram_path)
+
+    return np.hstack((lbp, mfccs, glcm, rp)).tolist()
+
+
 fv_lbp_rp = FeatureSet("lbp-rp", fv_lbp_rp_ex)
 fv_lbp = FeatureSet("lbp", fv_lbp_ex)
 fv_rp = FeatureSet("rp", fv_rp_ex)
@@ -144,3 +169,6 @@ fv_glcm_mfcc = FeatureSet("glcm-mfcc", fv_glcm_mfcc_ex)
 fv_lbp_mfcc = FeatureSet("lbp-mfcc", fv_lbp_mfcc_ex)
 fv_lpq_mfcc = FeatureSet("lpq-mfcc", fv_lpq_mfcc_ex)
 fv_lbp_mfcc_glcm = FeatureSet("lbp-mfcc-glcm", fv_lbp_mfcc_glcm_ex)
+fv_lbp_mfcc_glcm_rp = FeatureSet("lbp-mfcc-glcm-rp", fv_lbp_mfcc_glcm_rp_ex)
+fv_lbp_mfcc_rp = FeatureSet("lbp-mfcc-rp", fv_lbp_mfcc_rp_ex)
+fv_lpq_mfcc_rp = FeatureSet("lpq-mfcc-rp", fv_lpq_mfcc_rp_ex)

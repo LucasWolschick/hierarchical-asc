@@ -1,16 +1,16 @@
-# hier = {
-#     "_root": ["_indoors", "_outdoors", "_transportation"],
-#     "_indoors": ["airport", "shopping_mall", "metro_station"],
-#     "_outdoors": [
-#         "street_pedestrian",
-#         "public_square",
-#         "street_traffic",
-#         "park",
-#     ],
-#     "_transportation": ["tram", "bus", "metro"],
-# }
+hier1 = {
+    "_root": ["_indoors", "_outdoors", "_transportation"],
+    "_indoors": ["airport", "shopping_mall", "metro_station"],
+    "_outdoors": [
+        "street_pedestrian",
+        "public_square",
+        "street_traffic",
+        "park",
+    ],
+    "_transportation": ["tram", "bus", "metro"],
+}
 
-hier = {
+hier2 = {
     "_root": ["_1", "_2", "_3", "_4"],
     "_1": ["airport", "shopping_mall", "bus"],
     "_2": ["public_square", "park"],
@@ -18,7 +18,8 @@ hier = {
     "_4": ["tram", "metro"],
 }
 
-paths = {}
+paths1 = {}
+paths2 = {}
 
 
 def add_path(paths, hier, node, parents):
@@ -28,4 +29,5 @@ def add_path(paths, hier, node, parents):
             add_path(paths, hier, child, parents + [node])
 
 
-add_path(paths, hier, "_root", [])
+add_path(paths1, hier1, "_root", [])
+add_path(paths2, hier2, "_root", [])
